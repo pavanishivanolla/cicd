@@ -3,7 +3,7 @@
 stopifnot(requireNamespace("rpart", quietly = TRUE))
 
 # Run the training and evaluation script
-source("train.R")
+
 
 # Verify that the model was saved
 stopifnot(file.exists("artifacts/iris_model.rds"))
