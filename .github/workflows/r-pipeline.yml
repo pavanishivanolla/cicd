@@ -1,5 +1,4 @@
-
-name: R ML CI-CD Pipeline
+name: R ML CI Pipeline
 
 on:
   push:
@@ -22,43 +21,33 @@ permissions:
   contents: read
 
 jobs:
-  test-and-deploy:
+  test-and-train:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v4
 
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
 
-      - name: Install R packages
-        uses: r-lib/actions/setup-r-dependencies@v2
-        with:
-          packages: any::shiny, any::rpart, any::rsconnect
-          cache-version: 1
+      - name: Install required R package
+        run: |
+          Rscript -e 'install.packages(
+            "rpart",
+            repos = "https://cloud.r-project.org"
+          )'
 
-      - name: Run model tests
+      - name: Train model
+        run: Rscript train.R
+
+      - name: Test and validate saved model
         run: Rscript test_model.R
 
-      - name: Deploy validated application
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          APPNAME: iris-predictor-r
-          RSCONNECT_USER: ${{ secrets.RSCONNECT_USER }}
-          RSCONNECT_TOKEN: ${{ secrets.RSCONNECT_TOKEN }}
-          RSCONNECT_SECRET: ${{ secrets.RSCONNECT_SECRET }}
-        run: |
-          Rscript -e 'rsconnect::setAccountInfo(
-            name = Sys.getenv("RSCONNECT_USER"),
-            token = Sys.getenv("RSCONNECT_TOKEN"),
-            secret = Sys.getenv("RSCONNECT_SECRET")
-          )'
-
-          Rscript -e 'rsconnect::deployApp(
-            appDir = ".",
-            appName = Sys.getenv("APPNAME"),
-            account = Sys.getenv("RSCONNECT_USER"),
-            server = "shinyapps.io",
-            forceUpdate = TRUE
-          )'
+      - name: Upload trained model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: iris-model
+          path: artifacts/iris_model.rds
+          if-no-files-found: error
+          retention-days: 30
