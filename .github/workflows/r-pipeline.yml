@@ -1,4 +1,4 @@
-
+```yaml
 name: R ML CI Pipeline
 
 on:
@@ -40,14 +40,37 @@ jobs:
           sudo apt-get install -y \
             libcurl4-openssl-dev \
             libssl-dev \
-            libxml2-dev
+            libxml2-dev \
+            libuv1-dev
 
-      - name: Install model packages
+      - name: Install model and deployment packages
         run: |
-          Rscript -e 'install.packages(
-            c("rpart", "shiny"),
-            repos = "https://cloud.r-project.org"
-          )'
+          Rscript -e '
+            options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+            install.packages(c(
+              "rpart",
+              "shiny",
+              "rsconnect"
+            ))
+
+            stopifnot(requireNamespace("rpart", quietly = TRUE))
+            stopifnot(requireNamespace("shiny", quietly = TRUE))
+            stopifnot(requireNamespace("rsconnect", quietly = TRUE))
+          '
+
+      - name: Verify required packages
+        run: |
+          Rscript -e '
+            stopifnot(requireNamespace("rpart", quietly = TRUE))
+            stopifnot(requireNamespace("shiny", quietly = TRUE))
+            stopifnot(requireNamespace("rsconnect", quietly = TRUE))
+
+            cat("All required R packages are installed.\n")
+            print(packageVersion("rpart"))
+            print(packageVersion("shiny"))
+            print(packageVersion("rsconnect"))
+          '
 
       - name: Train model
         run: Rscript train.R
@@ -63,18 +86,6 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      
-      - name: Install system libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libcurl4-openssl-dev \
-            libssl-dev \
-            libxml2-dev \
-            libuv1-dev
-
-
-
       - name: Configure shinyapps.io account
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
@@ -84,20 +95,22 @@ jobs:
         run: |
           Rscript -e '
             stopifnot(requireNamespace("rsconnect", quietly = TRUE))
+
             stopifnot(
               nzchar(Sys.getenv("RSCONNECT_USER")),
               nzchar(Sys.getenv("RSCONNECT_TOKEN")),
               nzchar(Sys.getenv("RSCONNECT_SECRET"))
             )
+
             rsconnect::setAccountInfo(
               name = Sys.getenv("RSCONNECT_USER"),
               token = Sys.getenv("RSCONNECT_TOKEN"),
               secret = Sys.getenv("RSCONNECT_SECRET")
             )
+
+            cat("shinyapps.io account configured successfully.\n")
           '
 
-     
-      
       - name: Deploy Shiny app
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
@@ -106,10 +119,6 @@ jobs:
           RSCONNECT_SECRET: ${{ secrets.RSCONNECT_SECRET }}
         run: |
           Rscript -e '
-            options(repos = c(CRAN = "https://cloud.r-project.org"))
-
-            install.packages(c("shiny", "rpart", "rsconnect"))
-
             stopifnot(requireNamespace("shiny", quietly = TRUE))
             stopifnot(requireNamespace("rpart", quietly = TRUE))
             stopifnot(requireNamespace("rsconnect", quietly = TRUE))
@@ -126,6 +135,4 @@ jobs:
               forceUpdate = TRUE
             )
           '
-
-
-
+```
