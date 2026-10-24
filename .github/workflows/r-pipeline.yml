@@ -53,6 +53,9 @@ jobs:
           path: artifacts/iris_model.rds
           if-no-files-found: error
           retention-days: 30
+      - name: Install rsconnect
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: Rscript -e 'install.packages("rsconnect", repos="https://cloud.r-project.org")'
 
       - name: Configure shinyapps.io account
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
