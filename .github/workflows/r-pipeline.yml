@@ -98,14 +98,35 @@ jobs:
           '
 
      
+      ```yaml
       - name: Deploy Shiny app
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          RSCONNECT_USER: ${{ secrets.RSCONNECT_USER }}
+          RSCONNECT_TOKEN: ${{ secrets.RSCONNECT_TOKEN }}
+          RSCONNECT_SECRET: ${{ secrets.RSCONNECT_SECRET }}
         run: |
           Rscript -e '
+            options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+            install.packages(c("shiny", "rpart", "rsconnect"))
+
+            stopifnot(requireNamespace("shiny", quietly = TRUE))
+            stopifnot(requireNamespace("rpart", quietly = TRUE))
+            stopifnot(requireNamespace("rsconnect", quietly = TRUE))
+
+            rsconnect::setAccountInfo(
+              name = Sys.getenv("RSCONNECT_USER"),
+              token = Sys.getenv("RSCONNECT_TOKEN"),
+              secret = Sys.getenv("RSCONNECT_SECRET")
+            )
+
             rsconnect::deployApp(
               appDir = ".",
               appName = "iris-predictor-r",
               forceUpdate = TRUE
             )
           '
+```
+
 
