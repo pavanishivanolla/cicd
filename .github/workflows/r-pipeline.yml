@@ -97,12 +97,15 @@ jobs:
             )
           '
 
+     
       - name: Deploy Shiny app
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           Rscript -e '
             rsconnect::deployApp(
               appDir = ".",
-              appName = "iris-predictor-r"
+              appName = "iris-predictor-r",
+              forceUpdate = TRUE
             )
           '
+
