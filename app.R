@@ -1,77 +1,124 @@
 
-name: R ML CI Pipeline
+# app.R
+# CI/CD Pipeline Optimization - Iris Species Prediction
 
-on:
-  push:
-    branches: [main]
-    paths:
-      - "app.R"
-      - "train.R"
-      - "test_model.R"
-      - "artifacts/**"
-      - ".github/workflows/r-pipeline.yml"
+library(shiny)
 
-  pull_request:
-    branches: [main]
-    paths:
-      - "app.R"
-      - "train.R"
-      - "test_model.R"
-      - "artifacts/**"
-      - ".github/workflows/r-pipeline.yml"
+# Load the trained model
+model_path <- "artifacts/iris_model.rds"
 
-permissions:
-  contents: read
+if (!file.exists(model_path)) {
+  stop("Model file not found. Please run train.R first.")
+}
 
-jobs:
-  test-and-train:
-    runs-on: ubuntu-latest
+saved <- readRDS(model_path)
+model <- saved$model
+model_accuracy <- saved$accuracy
 
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+# User interface
+ui <- fluidPage(
+  titlePanel("Iris Species Prediction"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      h4("Enter Flower Measurements"),
+      
+      numericInput(
+        "sepal_length",
+        "Sepal Length (cm)",
+        value = 5.1,
+        min = 0.1,
+        max = 10,
+        step = 0.1
+      ),
+      
+      numericInput(
+        "sepal_width",
+        "Sepal Width (cm)",
+        value = 3.5,
+        min = 0.1,
+        max = 10,
+        step = 0.1
+      ),
+      
+      numericInput(
+        "petal_length",
+        "Petal Length (cm)",
+        value = 1.4,
+        min = 0.1,
+        max = 10,
+        step = 0.1
+      ),
+      
+      numericInput(
+        "petal_width",
+        "Petal Width (cm)",
+        value = 0.2,
+        min = 0.1,
+        max = 10,
+        step = 0.1
+      ),
+      
+      actionButton(
+        "predict",
+        "Predict Species",
+        class = "btn-primary"
+      )
+    ),
+    
+    mainPanel(
+      h3("Prediction Result"),
+      verbatimTextOutput("prediction"),
+      
+      hr(),
+      
+      h4("Model Information"),
+      textOutput("accuracy"),
+      
+      p("Model: Decision Tree (rpart)"),
+      p("Dataset: Iris")
+    )
+  )
+)
 
-      - name: Set up R
-        uses: r-lib/actions/setup-r@v2
+# Server logic
+server <- function(input, output, session) {
+  
+  prediction_result <- eventReactive(input$predict, {
+    
+    flower <- data.frame(
+      Sepal.Length = input$sepal_length,
+      Sepal.Width = input$sepal_width,
+      Petal.Length = input$petal_length,
+      Petal.Width = input$petal_width
+    )
+    
+    prediction <- predict(
+      model,
+      newdata = flower,
+      type = "class"
+    )
+    
+    as.character(prediction)
+  })
+  
+  output$prediction <- renderText({
+    req(input$predict > 0)
+    
+    paste(
+      "Predicted Iris Species:",
+      prediction_result()
+    )
+  })
+  
+  output$accuracy <- renderText({
+    paste0(
+      "Test accuracy: ",
+      round(model_accuracy * 100, 2),
+      "%"
+    )
+  })
+}
 
-      - name: Install required R packages
-        run: |
-          Rscript -e 'install.packages(
-            c("rpart", "shiny", "rsconnect"),
-            repos = "https://cloud.r-project.org"
-          )'
-
-      - name: Train model
-        run: Rscript train.R
-
-      - name: Test and validate saved model
-        run: Rscript test_model.R
-
-      - name: Upload trained model artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: iris-model
-          path: artifacts/iris_model.rds
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Configure shinyapps.io account
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          RSCONNECT_USER: ${{ secrets.RSCONNECT_USER }}
-          RSCONNECT_TOKEN: ${{ secrets.RSCONNECT_TOKEN }}
-          RSCONNECT_SECRET: ${{ secrets.RSCONNECT_SECRET }}
-        run: |
-          Rscript -e 'rsconnect::setAccountInfo(
-            name = Sys.getenv("RSCONNECT_USER"),
-            token = Sys.getenv("RSCONNECT_TOKEN"),
-            secret = Sys.getenv("RSCONNECT_SECRET")
-          )'
-
-      - name: Deploy Shiny app
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          Rscript -e 'rsconnect::deployApp(
-            appDir = ".",
-            appName = "iris-predictor-r"
-          )'
+# Launch application
+shinyApp(ui = ui, server = server)
