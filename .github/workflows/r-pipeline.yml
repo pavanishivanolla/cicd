@@ -63,18 +63,17 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Install and verify rsconnect
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      
+      - name: Install system libraries
         run: |
-          Rscript -e '
-            options(repos = c(CRAN = "https://cloud.r-project.org"))
-            install.packages(
-              c("curl", "httr2", "snowflakeauth", "rsconnect"),
-              dependencies = TRUE
-            )
-            stopifnot(requireNamespace("rsconnect", quietly = TRUE))
-            print(packageVersion("rsconnect"))
-          '
+          sudo apt-get update
+          sudo apt-get install -y \
+            libcurl4-openssl-dev \
+            libssl-dev \
+            libxml2-dev \
+            libuv1-dev
+
+
 
       - name: Configure shinyapps.io account
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
