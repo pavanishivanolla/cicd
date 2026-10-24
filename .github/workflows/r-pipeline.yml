@@ -10,6 +10,7 @@ on:
       - "test_model.R"
       - "artifacts/**"
       - ".github/workflows/r-pipeline.yml"
+
   pull_request:
     branches: [main]
     paths:
@@ -40,6 +41,10 @@ jobs:
             repos = "https://cloud.r-project.org"
           )'
 
+      - name: Verify rsconnect installation
+        run: |
+          Rscript -e 'stopifnot(requireNamespace("rsconnect", quietly = TRUE))'
+
       - name: Train model
         run: Rscript train.R
 
@@ -53,9 +58,6 @@ jobs:
           path: artifacts/iris_model.rds
           if-no-files-found: error
           retention-days: 30
-      - name: Install rsconnect
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: Rscript -e 'install.packages("rsconnect", repos="https://cloud.r-project.org")'
 
       - name: Configure shinyapps.io account
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -64,16 +66,28 @@ jobs:
           RSCONNECT_TOKEN: ${{ secrets.RSCONNECT_TOKEN }}
           RSCONNECT_SECRET: ${{ secrets.RSCONNECT_SECRET }}
         run: |
-          Rscript -e 'rsconnect::setAccountInfo(
-            name = Sys.getenv("RSCONNECT_USER"),
-            token = Sys.getenv("RSCONNECT_TOKEN"),
-            secret = Sys.getenv("RSCONNECT_SECRET")
-          )'
+          Rscript -e '
+            stopifnot(requireNamespace("rsconnect", quietly = TRUE))
+
+            stopifnot(
+              nzchar(Sys.getenv("RSCONNECT_USER")),
+              nzchar(Sys.getenv("RSCONNECT_TOKEN")),
+              nzchar(Sys.getenv("RSCONNECT_SECRET"))
+            )
+
+            rsconnect::setAccountInfo(
+              name = Sys.getenv("RSCONNECT_USER"),
+              token = Sys.getenv("RSCONNECT_TOKEN"),
+              secret = Sys.getenv("RSCONNECT_SECRET")
+            )
+          '
 
       - name: Deploy Shiny app
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          Rscript -e 'rsconnect::deployApp(
-            appDir = ".",
-            appName = "iris-predictor-r"
-          )'
+          Rscript -e '
+            rsconnect::deployApp(
+              appDir = ".",
+              appName = "iris-predictor-r"
+            )
+          '
