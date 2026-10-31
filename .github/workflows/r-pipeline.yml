@@ -1,83 +1,113 @@
 
 name: R ML CI Pipeline
 
+# Run automatically whenever code is pushed
+# or a pull request is created.
 on:
   push:
-    branches: [main]
-    paths:
-      - "app.R"
-      - "train.R"
-      - "test_model.R"
-      - "artifacts/**"
-      - ".github/workflows/r-pipeline.yml"
+    branches:
+      - main
 
   pull_request:
-    branches: [main]
-    paths:
-      - "app.R"
-      - "train.R"
-      - "test_model.R"
-      - "artifacts/**"
-      - ".github/workflows/r-pipeline.yml"
+    branches:
+      - main
+
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# Prevent unnecessary simultaneous runs
+concurrency:
+  group: r-ml-pipeline-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test-and-train:
-    runs-on: ubuntu-latest
+    name: Train and Test R Model
+    runs-on: ubuntu-24.04
 
     steps:
-      - name: Check out repository
+
+      # STEP 1: Download repository code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
+      # STEP 2: Install a compatible R version
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.2'
 
-      - name: Install system libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libcurl4-openssl-dev \
-            libssl-dev \
-            libxml2-dev \
-            libuv1-dev
-
-      - name: Install model and deployment packages
+      # STEP 3: Install required packages
+      - name: Install R dependencies
         run: |
           Rscript -e '
-            options(repos = c(CRAN = "https://cloud.r-project.org"))
-
-            install.packages(c(
-              "rpart",
-              "shiny",
-              "rsconnect"
+            options(repos = c(
+              CRAN = "https://cloud.r-project.org"
             ))
 
-            stopifnot(requireNamespace("rpart", quietly = TRUE))
-            stopifnot(requireNamespace("shiny", quietly = TRUE))
-            stopifnot(requireNamespace("rsconnect", quietly = TRUE))
+            install.packages("rpart")
+
+            stopifnot(
+              requireNamespace("rpart", quietly = TRUE)
+            )
+
+            cat("R dependencies installed successfully.\n")
           '
 
-      - name: Verify required packages
+      # STEP 4: Verify R environment
+      - name: Check R environment
         run: |
           Rscript -e '
-            stopifnot(requireNamespace("rpart", quietly = TRUE))
-            stopifnot(requireNamespace("shiny", quietly = TRUE))
-            stopifnot(requireNamespace("rsconnect", quietly = TRUE))
+            cat("R version:\n")
+            print(R.version.string)
 
-            cat("All required R packages are installed.\n")
+            cat("rpart version:\n")
             print(packageVersion("rpart"))
-            print(packageVersion("shiny"))
-            print(packageVersion("rsconnect"))
           '
 
+      # STEP 5: Train machine learning model
       - name: Train model
-        run: Rscript train.R
+        run: |
+          Rscript train.R
 
-      - name: Test and validate saved model
-        run: Rscript test_model.R
+      # STEP 6: Test trained model
+      - name: Test and validate model
+        run: |
+          Rscript test_model.R
 
+      # STEP 7: Verify generated model file
+      - name: Verify model artifact
+        run: |
+          Rscript -e '
+            model_file <- "artifacts/iris_model.rds"
+
+            if (!file.exists(model_file)) {
+              stop("Model artifact was not created!")
+            }
+
+            saved <- readRDS(model_file)
+
+            stopifnot(
+              is.list(saved),
+              inherits(saved$model, "rpart"),
+              is.numeric(saved$accuracy),
+              length(saved$accuracy) == 1,
+              is.finite(saved$accuracy),
+              saved$accuracy >= 0.70,
+              saved$accuracy <= 1
+            )
+
+            cat("Model artifact verified successfully.\n")
+            cat(
+              "Model accuracy:",
+              round(saved$accuracy * 100, 2),
+              "%\n"
+            )
+          '
+
+      # STEP 8: Upload trained model
       - name: Upload trained model artifact
         uses: actions/upload-artifact@v4
         with:
@@ -85,54 +115,3 @@ jobs:
           path: artifacts/iris_model.rds
           if-no-files-found: error
           retention-days: 30
-
-      - name: Configure shinyapps.io account
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          RSCONNECT_USER: ${{ secrets.RSCONNECT_USER }}
-          RSCONNECT_TOKEN: ${{ secrets.RSCONNECT_TOKEN }}
-          RSCONNECT_SECRET: ${{ secrets.RSCONNECT_SECRET }}
-        run: |
-          Rscript -e '
-            stopifnot(requireNamespace("rsconnect", quietly = TRUE))
-
-            stopifnot(
-              nzchar(Sys.getenv("RSCONNECT_USER")),
-              nzchar(Sys.getenv("RSCONNECT_TOKEN")),
-              nzchar(Sys.getenv("RSCONNECT_SECRET"))
-            )
-
-            rsconnect::setAccountInfo(
-              name = Sys.getenv("RSCONNECT_USER"),
-              token = Sys.getenv("RSCONNECT_TOKEN"),
-              secret = Sys.getenv("RSCONNECT_SECRET")
-            )
-
-            cat("shinyapps.io account configured successfully.\n")
-          '
-
-      - name: Deploy Shiny app
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          RSCONNECT_USER: ${{ secrets.RSCONNECT_USER }}
-          RSCONNECT_TOKEN: ${{ secrets.RSCONNECT_TOKEN }}
-          RSCONNECT_SECRET: ${{ secrets.RSCONNECT_SECRET }}
-        run: |
-          Rscript -e '
-            stopifnot(requireNamespace("shiny", quietly = TRUE))
-            stopifnot(requireNamespace("rpart", quietly = TRUE))
-            stopifnot(requireNamespace("rsconnect", quietly = TRUE))
-
-            rsconnect::setAccountInfo(
-              name = Sys.getenv("RSCONNECT_USER"),
-              token = Sys.getenv("RSCONNECT_TOKEN"),
-              secret = Sys.getenv("RSCONNECT_SECRET")
-            )
-
-            rsconnect::deployApp(
-              appDir = ".",
-              appName = "iris-predictor-r",
-              forceUpdate = TRUE
-            )
-          '
-
