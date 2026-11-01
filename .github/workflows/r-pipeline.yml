@@ -137,10 +137,11 @@ jobs:
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
 
     # GitHub repository secrets
+  
     env:
-      SHINYAPPS_ACCOUNT: ${{ secrets.SHINYAPPS_ACCOUNT }}
-      SHINYAPPS_TOKEN: ${{ secrets.SHINYAPPS_TOKEN }}
-      SHINYAPPS_SECRET: ${{ secrets.SHINYAPPS_SECRET }}
+      SHINYAPPS_ACCOUNT: ${{ secrets.RSCONNECT_USER }}
+      SHINYAPPS_TOKEN: ${{ secrets.RSCONNECT_TOKEN }}
+      SHINYAPPS_SECRET: ${{ secrets.RSCONNECT_SECRET }}
 
     steps:
 
