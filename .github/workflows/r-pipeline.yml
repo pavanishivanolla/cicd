@@ -1,10 +1,140 @@
+name: R ML CI Pipeline
+
+# Run automatically whenever code is pushed
+# or a pull request is created.
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Prevent unnecessary simultaneous runs
+concurrency:
+  group: r-ml-pipeline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ==========================================
+  # JOB 1: TRAIN AND TEST R MODEL
+  # ==========================================
+
+  test-and-train:
+    name: Train and Test R Model
+    runs-on: ubuntu-24.04
+
+    steps:
+
+      # STEP 1: Download repository code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # STEP 2: Install R
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.2'
+
+      # STEP 3: Install required packages
+      - name: Install R dependencies
+        run: |
+          Rscript -e '
+            options(repos = c(
+              CRAN = "https://cloud.r-project.org"
+            ))
+
+            install.packages("rpart")
+
+            stopifnot(
+              requireNamespace("rpart", quietly = TRUE)
+            )
+
+            cat("R dependencies installed successfully.\n")
+          '
+
+      # STEP 4: Verify R environment
+      - name: Check R environment
+        run: |
+          Rscript -e '
+            cat("R version:\n")
+            print(R.version.string)
+
+            cat("rpart version:\n")
+            print(packageVersion("rpart"))
+          '
+
+      # STEP 5: Train machine learning model
+      - name: Train model
+        run: |
+          Rscript train.R
+
+      # STEP 6: Test trained model
+      - name: Test and validate model
+        run: |
+          Rscript test_model.R
+
+      # STEP 7: Verify generated model file
+      - name: Verify model artifact
+        run: |
+          Rscript -e '
+            model_file <- "artifacts/iris_model.rds"
+
+            if (!file.exists(model_file)) {
+              stop("Model artifact was not created!")
+            }
+
+            saved <- readRDS(model_file)
+
+            stopifnot(
+              is.list(saved),
+              inherits(saved$model, "rpart"),
+              is.numeric(saved$accuracy),
+              length(saved$accuracy) == 1,
+              is.finite(saved$accuracy),
+              saved$accuracy >= 0.70,
+              saved$accuracy <= 1
+            )
+
+            cat("Model artifact verified successfully.\n")
+
+            cat(
+              "Model accuracy:",
+              round(saved$accuracy * 100, 2),
+              "%\n"
+            )
+          '
+
+      # STEP 8: Upload trained model
+      - name: Upload trained model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: iris-model
+          path: artifacts/iris_model.rds
+          if-no-files-found: error
+          retention-days: 30
+
+
+  # ==========================================
+  # JOB 2: DEPLOY SHINY APPLICATION
+  # ==========================================
+
   deploy-shiny:
     name: Deploy Shiny Application
     runs-on: ubuntu-24.04
 
-    # Run deployment only after successful CI on main
+    # Run only after successful training and testing
     needs: test-and-train
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    # Deploy on pushes to main or manual runs on main
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
 
     env:
       SHINYAPPS_ACCOUNT: ${{ secrets.SHINYAPPS_ACCOUNT }}
@@ -12,28 +142,37 @@
       SHINYAPPS_SECRET: ${{ secrets.SHINYAPPS_SECRET }}
 
     steps:
-      # Step 1: Checkout repository
+
+      # STEP 1: Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: Set up R
+      # STEP 2: Set up R
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
         with:
           r-version: '4.5.2'
 
-      # Step 3: Download trained model
+      # STEP 3: Download trained model artifact
       - name: Download trained model artifact
         uses: actions/download-artifact@v4
         with:
           name: iris-model
           path: artifacts/
 
-      # Step 4: Install required packages
+      # STEP 4: Verify Shiny app and model files
+      - name: Check deployment files
+        run: |
+          test -f app.R
+          test -f artifacts/iris_model.rds
+
+      # STEP 5: Install Shiny dependencies
       - name: Install Shiny dependencies
         run: |
           Rscript -e '
-            options(repos = c(CRAN = "https://cloud.r-project.org"))
+            options(repos = c(
+              CRAN = "https://cloud.r-project.org"
+            ))
 
             install.packages(c(
               "shiny",
@@ -46,9 +185,37 @@
               requireNamespace("rpart", quietly = TRUE),
               requireNamespace("rsconnect", quietly = TRUE)
             )
+
+            cat("Shiny dependencies installed successfully.\n")
           '
 
-      # Step 5: Configure shinyapps.io
+      # STEP 6: Check deployment credentials
+      - name: Verify shinyapps.io credentials
+        run: |
+          Rscript -e '
+            required <- c(
+              "SHINYAPPS_ACCOUNT",
+              "SHINYAPPS_TOKEN",
+              "SHINYAPPS_SECRET"
+            )
+
+            missing <- required[
+              !nzchar(Sys.getenv(required))
+            ]
+
+            if (length(missing) > 0) {
+              stop(
+                paste(
+                  "Missing GitHub secrets:",
+                  paste(missing, collapse = ", ")
+                )
+              )
+            }
+
+            cat("Deployment credentials are available.\n")
+          '
+
+      # STEP 7: Configure shinyapps.io
       - name: Configure shinyapps.io
         run: |
           Rscript -e '
@@ -57,9 +224,11 @@
               token = Sys.getenv("SHINYAPPS_TOKEN"),
               secret = Sys.getenv("SHINYAPPS_SECRET")
             )
+
+            cat("shinyapps.io configured successfully.\n")
           '
 
-      # Step 6: Deploy application
+      # STEP 8: Deploy Shiny application
       - name: Deploy Shiny application
         run: |
           Rscript -e '
