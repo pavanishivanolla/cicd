@@ -133,9 +133,10 @@ jobs:
     # Run only after successful training and testing
     needs: test-and-train
 
-    # Deploy on pushes to main or manual runs on main
+    # Deploy only on pushes to main or manual runs on main
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
 
+    # GitHub repository secrets
     env:
       SHINYAPPS_ACCOUNT: ${{ secrets.SHINYAPPS_ACCOUNT }}
       SHINYAPPS_TOKEN: ${{ secrets.SHINYAPPS_TOKEN }}
@@ -160,13 +161,24 @@ jobs:
           name: iris-model
           path: artifacts/
 
-      # STEP 4: Verify Shiny app and model files
+      # STEP 4: Install Linux system dependencies
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            libcurl4-openssl-dev \
+            libssl-dev \
+            libxml2-dev \
+            libuv1-dev
+
+      # STEP 5: Check deployment files
       - name: Check deployment files
         run: |
           test -f app.R
           test -f artifacts/iris_model.rds
 
-      # STEP 5: Install Shiny dependencies
+      # STEP 6: Install Shiny dependencies
       - name: Install Shiny dependencies
         run: |
           Rscript -e '
@@ -175,21 +187,21 @@ jobs:
             ))
 
             install.packages(c(
-              "shiny",
               "rpart",
+              "shiny",
               "rsconnect"
             ))
 
             stopifnot(
-              requireNamespace("shiny", quietly = TRUE),
               requireNamespace("rpart", quietly = TRUE),
+              requireNamespace("shiny", quietly = TRUE),
               requireNamespace("rsconnect", quietly = TRUE)
             )
 
-            cat("Shiny dependencies installed successfully.\n")
+            cat("All Shiny dependencies installed successfully.\n")
           '
 
-      # STEP 6: Check deployment credentials
+      # STEP 7: Verify shinyapps.io credentials
       - name: Verify shinyapps.io credentials
         run: |
           Rscript -e '
@@ -215,7 +227,7 @@ jobs:
             cat("Deployment credentials are available.\n")
           '
 
-      # STEP 7: Configure shinyapps.io
+      # STEP 8: Configure shinyapps.io
       - name: Configure shinyapps.io
         run: |
           Rscript -e '
@@ -228,7 +240,7 @@ jobs:
             cat("shinyapps.io configured successfully.\n")
           '
 
-      # STEP 8: Deploy Shiny application
+      # STEP 9: Deploy Shiny application
       - name: Deploy Shiny application
         run: |
           Rscript -e '
