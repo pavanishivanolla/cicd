@@ -17,7 +17,7 @@ model_accuracy <- saved$accuracy
 
 # User interface
 ui <- fluidPage(
-  titlePanel("ci cd iris predictor"),
+  titlePanel("ci cd "),
   
   sidebarLayout(
     sidebarPanel(
